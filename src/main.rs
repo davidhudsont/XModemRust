@@ -1,5 +1,7 @@
 extern crate serial;
 
+mod xmodem;
+
 use std::env;
 use std::io;
 use std::time::Duration;
