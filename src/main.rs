@@ -2,16 +2,34 @@ extern crate serial;
 
 mod xmodem;
 
+use xmodem::XModem;
+
 use std::env;
 use std::io;
 use std::time::Duration;
 
 use serial::prelude::*;
+use std::fs::File;
 
 fn main() {
     for arg in env::args_os().skip(1) {
         let mut port = serial::open(&arg).unwrap();
-        interact(&mut port).unwrap();
+        port.set_timeout(Duration::new(1, 0)).unwrap();
+        port.reconfigure(&|settings: &mut dyn SerialPortSettings| {
+            settings.set_baud_rate(serial::Baud115200)?;
+            settings.set_char_size(serial::Bits8);
+            settings.set_parity(serial::ParityNone);
+            settings.set_stop_bits(serial::Stop1);
+            settings.set_flow_control(serial::FlowNone);
+            Ok(())
+        }).unwrap();
+        let mut xmodem: XModem = XModem::new(Box::new(port));
+
+        let stream = File::open("example.txt").unwrap();
+
+        xmodem.send(Box::new(stream)).unwrap();
+
+        // interact(&mut port).unwrap();
     }
 }
 

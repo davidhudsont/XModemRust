@@ -1,10 +1,10 @@
 extern crate serial;
 
 use serial::prelude::*;
-use std::{io::{Read, Write}, collections::btree_map};
+use std::{io::{Read, Write}};
 
 
-struct XModem
+pub struct XModem
 {
     uart: Box<dyn SerialPort>,
     retries: i32,
@@ -50,6 +50,7 @@ impl XModem
             match self.uart.as_mut().read(&mut bytes) {
                 Ok(_) => {
                     let byte = bytes[0];
+                    println!("Receiver Byte: {}, Errors: {}", byte, errors);
                     match byte {
                         NAK => break,
                         CRC => {
@@ -67,7 +68,7 @@ impl XModem
                         _ => {
                             errors += 1;
                             if errors > self.retries {
-                                return Err("Reached max number of retries");
+                                return Err("Synchronization failed, reached max number of retries");
                             }
                         }
                     }
@@ -75,7 +76,7 @@ impl XModem
                 _ => {
                     errors += 1;
                     if errors > self.retries {
-                        return Err("Reached max number of retries");
+                        return Err("Synchronization failed, reached max number of retries");
                     }
                 }
             }
@@ -84,51 +85,70 @@ impl XModem
         // Send Packets
         errors = 0;
         let packet_length: usize = 128;
-        let packet_num: u8 = 1;
+        let mut packet_num: u8 = 1;
+        let mut buf = [0; 5];
+        println!("Data received {:?}", buf);
         loop {
             let mut data: Vec<u8> = vec![0; packet_length];
             match stream.as_mut().read(&mut data) {
                 Ok(0) => break,
-                Ok(_) => {
+                Ok(len) => {
                     loop {
                         // Emit Packet
                         let mut packet: Vec<u8> = vec![0];
                         let seq2: u8 = 0xff - packet_num;
+                        println!("PacketNum: {}", packet_num);
+                        println!("PacketNum Inverse: {}", seq2);
+                        println!("Stream Data Len: {}", len);
+                        println!("Data to send {:?}", data);
                         packet.push(SOH);
                         packet.push(packet_num);
                         packet.push(seq2);
-                        packet.append(&mut data);
+                        for val in &data {
+                            packet.push(val.clone());
+                        }
 
                         if crc_mode {
                             let crc = self.crc(&data);
                             let hi_crc_byte: u8 = (crc >> 8) as u8;
                             let lo_crc_byte: u8 = (crc & 0xff) as u8;
+                            println!("CRC: {}", crc);
                             packet.push(hi_crc_byte);
                             packet.push(lo_crc_byte);
                         }
                         else {
                             let checksum = self.checksum(&data);
+                            println!("Checksum: {}", checksum);
                             packet.push(checksum);
                         }
                         self.uart.as_mut().write(&packet[..]);
-
-                        // Get Receiver ACK
+                        // self.uart.as_mut().flush();
                         let mut bytes = [0; 1];
+                        // Get Receiver ACK
                         match self.uart.as_mut().read(&mut bytes) {
                             Ok(_) => {
+                                println!("Data received {:?}", bytes);
                                 let byte = bytes[0];
+                                println!("Receiver Byte: {}, Errors: {}", byte, errors);
                                 match byte {
-                                    ACK => break,
+                                    ACK => {
+                                        if packet_num == 255 {
+                                            packet_num = 0;
+                                        }
+                                        packet_num += 1;
+                                        continue;
+                                    }
                                     NAK => {
                                         errors += 1;
+                                        println!("Received NAK resending");
                                         if errors > self.retries {
-                                            return Err("Reached max number of retries");
+                                            return Err("Packet Send Failed, reached max number of retries");
                                         }
                                     }
                                     _ => {
                                         errors += 1;
                                         if errors > self.retries {
-                                            return Err("Reached max number of retries");
+                                            return Err("Packet Send Failed, reached max number of retries");
                                         }
                                     }
                                 }
@@ -136,7 +156,7 @@ impl XModem
                             _ => {
                                 errors += 1;
                                 if errors > self.retries {
-                                    return Err("Reached max number of retries");
+                                    return Err("Packet Send Failed, reached max number of retries");
                                 }
                             }
                         }
@@ -156,12 +176,13 @@ impl XModem
             match stream.as_mut().read(&mut bytes) {
                 Ok(_) => {
                     let byte = bytes[0];
+                    println!("Receiver Byte: {}, Errors: {}", byte, errors);
                     match byte {
                         ACK => break,
                         _ => {
                             errors += 1;
                             if errors > self.retries {
-                                return Err("Reached max number of retries");
+                                return Err("End of Transmission Sync, reached max number of retries");
                             }
                         }
                     }
@@ -173,8 +194,11 @@ impl XModem
     }
 
     fn checksum(&self, data: &[u8]) -> u8 {
-        let sum: u8 = data.iter().sum();
-        return ((sum as u16) % 256) as u8; 
+        let sum: u32 = data.iter().map(|&val| val as u32).sum();
+        println!("Sum {}", sum);
+        let checksum = (sum % 256) as u8;
+        println!("Checksum {}", sum);
+        return checksum; 
     }
 
     fn crc(&self, data: &[u8]) -> u16 {
