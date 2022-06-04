@@ -1,54 +1,54 @@
-extern crate serial;
+use serialport::{DataBits, StopBits};
 
 mod xmodem;
 
 use xmodem::XModem;
 
-use std::env;
-use std::io;
 use std::time::Duration;
 
-use serial::prelude::*;
 use std::fs::File;
 
 fn main() {
-    for arg in env::args_os().skip(1) {
-        let mut port = serial::open(&arg).unwrap();
-        port.set_timeout(Duration::new(1, 0)).unwrap();
-        port.reconfigure(&|settings: &mut dyn SerialPortSettings| {
-            settings.set_baud_rate(serial::Baud115200)?;
-            settings.set_char_size(serial::Bits8);
-            settings.set_parity(serial::ParityNone);
-            settings.set_stop_bits(serial::Stop1);
-            settings.set_flow_control(serial::FlowNone);
-            Ok(())
-        }).unwrap();
-        let mut xmodem: XModem = XModem::new(Box::new(port));
+    let builder = serialport::new("COM11", 115200)
+        .data_bits(DataBits::Eight)
+        .stop_bits(StopBits::One);
 
-        let stream = File::open("example.txt").unwrap();
+    let mut port = builder.open().expect("Failed to open port");
 
-        xmodem.send(Box::new(stream)).unwrap();
+    port.set_timeout(Duration::new(1, 0)).unwrap();
+    // port.reconfigure(&|settings: &mut dyn SerialPortSettings| {
+    //     settings.set_baud_rate(serial::Baud115200)?;
+    //     settings.set_char_size(serial::Bits8);
+    //     settings.set_parity(serial::ParityNone);
+    //     settings.set_stop_bits(serial::Stop1);
+    //     settings.set_flow_control(serial::FlowNone);
+    //     Ok(())
+    // }).unwrap();
+    let mut xmodem: XModem = XModem::new(port);
 
-        // interact(&mut port).unwrap();
-    }
+    let stream = File::open("example.txt").unwrap();
+
+    xmodem.send(Box::new(stream)).unwrap();
+
+    // interact(&mut port).unwrap();
 }
 
-fn interact<T: SerialPort>(port: &mut T) -> io::Result<()> {
-    port.reconfigure(&|settings: &mut dyn SerialPortSettings| {
-        settings.set_baud_rate(serial::Baud9600)?;
-        settings.set_char_size(serial::Bits8);
-        settings.set_parity(serial::ParityNone);
-        settings.set_stop_bits(serial::Stop1);
-        settings.set_flow_control(serial::FlowNone);
-        Ok(())
-    })?;
+// fn interact<T: SerialPort>(port: &mut T) -> io::Result<()> {
+//     port.reconfigure(&|settings: &mut dyn SerialPortSettings| {
+//         settings.set_baud_rate(serial::Baud9600)?;
+//         settings.set_char_size(serial::Bits8);
+//         settings.set_parity(serial::ParityNone);
+//         settings.set_stop_bits(serial::Stop1);
+//         settings.set_flow_control(serial::FlowNone);
+//         Ok(())
+//     })?;
 
-    port.set_timeout(Duration::from_millis(1000))?;
+//     port.set_timeout(Duration::from_millis(1000))?;
 
-    let mut buf: Vec<u8> = (0..255).collect();
+//     let mut buf: Vec<u8> = (0..255).collect();
 
-    port.write(&buf[..])?;
-    port.read(&mut buf[..])?;
+//     port.write(&buf[..])?;
+//     port.read(&mut buf[..])?;
 
-    Ok(())
-}
+//     Ok(())
+// }

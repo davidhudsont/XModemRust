@@ -1,6 +1,5 @@
-extern crate serial;
 
-use serial::prelude::*;
+use serialport::SerialPort;
 use std::{io::{Read, Write}};
 
 
@@ -86,8 +85,7 @@ impl XModem
         errors = 0;
         let packet_length: usize = 128;
         let mut packet_num: u8 = 1;
-        let mut buf = [0; 5];
-        println!("Data received {:?}", buf);
+        self.uart.clear(serialport::ClearBuffer::Input).expect("Failed to clear buffer");
         loop {
             let mut data: Vec<u8> = vec![0; packet_length];
             match stream.as_mut().read(&mut data) {
@@ -121,8 +119,9 @@ impl XModem
                             println!("Checksum: {}", checksum);
                             packet.push(checksum);
                         }
-                        self.uart.as_mut().write(&packet[..]);
-                        // self.uart.as_mut().flush();
+                        self.uart.as_mut().write(&packet[..]).expect("Failed to Send Bytes");
+                        self.uart.clear(serialport::ClearBuffer::Input).expect("Failed to clear buffer");
+                        assert!(self.uart.bytes_to_read().unwrap() == 0);
                         let mut bytes = [0; 1];
                         // Get Receiver ACK
                         match self.uart.as_mut().read(&mut bytes) {
@@ -171,7 +170,7 @@ impl XModem
         // End of Transmission Sync
         loop {
             let packet: Vec<u8> = vec![EOT];
-            self.uart.as_mut().write(&packet[..]);
+            self.uart.as_mut().write(&packet[..]).expect("Failed Send Transmission Byte");
             let mut bytes = [0; 1];
             match stream.as_mut().read(&mut bytes) {
                 Ok(_) => {
