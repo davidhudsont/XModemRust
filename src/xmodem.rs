@@ -108,7 +108,7 @@ impl XModem
                         }
 
                         if crc_mode {
-                            let crc = self.crc(&data);
+                            let crc = crc(&data);
                             let hi_crc_byte: u8 = (crc >> 8) as u8;
                             let lo_crc_byte: u8 = (crc & 0xff) as u8;
                             println!("CRC: {}", crc);
@@ -116,7 +116,7 @@ impl XModem
                             packet.push(lo_crc_byte);
                         }
                         else {
-                            let checksum = self.checksum(&data);
+                            let checksum = checksum(&data);
                             println!("Checksum: {}", checksum);
                             packet.push(checksum);
                         }
@@ -195,27 +195,40 @@ impl XModem
         Ok(())
     }
 
-    fn checksum(&self, data: &[u8]) -> u8 {
-        let sum: u32 = data.iter().map(|&val| val as u32).sum();
-        println!("Sum {}", sum);
-        let checksum = (sum % 256) as u8;
-        println!("Checksum {}", sum);
-        return checksum; 
-    }
 
-    fn crc(&self, data: &[u8]) -> u16 {
-        let mut crc = 0;
-        for val in data {
-            let item: i32 = val.clone().into();
-            crc = crc ^ (item << 8);
-            for _ in 0..8 {
-                crc = crc << 1;
-                if crc & 0x10000 == 1 {
-                    crc = (crc ^ 0x1021) & 0xffff;
-                }
+
+
+
+}
+
+pub fn checksum(data: &[u8]) -> u8 {
+    let sum: u32 = data.iter().map(|&val| val as u32).sum();
+    let checksum = (sum % 256) as u8;
+    return checksum; 
+}
+
+pub fn crc(data: &[u8]) -> u16 {
+    let mut crc = 0;
+    for val in data {
+        let item: i32 = val.clone().into();
+        crc = crc ^ (item << 8);
+        for _ in 0..8 {
+            crc = crc << 1;
+            if crc & 0x10000 > 0 {
+                crc = (crc ^ 0x1021) & 0xffff;
             }
         }
-        return crc as u16; 
     }
+    return crc as u16; 
+}
 
+
+#[cfg(test)]
+
+#[test]
+fn test_crc()
+{
+    let data: Vec<u8> = vec![0x12, 0x34, 0x56, 0x78, 0x09];
+    let result = crc(&data);
+    assert_eq!(result, 0x5A76);
 }
