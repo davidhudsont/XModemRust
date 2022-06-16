@@ -53,6 +53,7 @@ impl XModem
                     match byte {
                         NAK => break,
                         CRC => {
+                            println!("Use CRC Mode");
                             crc_mode = true;
                             break;
                         }
@@ -124,7 +125,7 @@ impl XModem
                         assert!(self.uart.bytes_to_read().unwrap() == 0);
                         let mut bytes = [0; 1];
                         // Get Receiver ACK
-                        match self.uart.as_mut().read(&mut bytes) {
+                        match self.uart.as_mut().read_exact(&mut bytes) {
                             Ok(_) => {
                                 println!("Data received {:?}", bytes);
                                 let byte = bytes[0];
@@ -135,7 +136,7 @@ impl XModem
                                             packet_num = 0;
                                         }
                                         packet_num += 1;
-                                        continue;
+                                        break;
                                     }
                                     NAK => {
                                         errors += 1;
@@ -170,12 +171,14 @@ impl XModem
         // End of Transmission Sync
         loop {
             let packet: Vec<u8> = vec![EOT];
+            self.uart.clear(serialport::ClearBuffer::Input).expect("Failed to clear buffer");
+            assert!(self.uart.bytes_to_read().unwrap() == 0);
             self.uart.as_mut().write(&packet[..]).expect("Failed Send Transmission Byte");
             let mut bytes = [0; 1];
-            match stream.as_mut().read(&mut bytes) {
+            match  self.uart.as_mut().read_exact(&mut bytes) {
                 Ok(_) => {
                     let byte = bytes[0];
-                    println!("Receiver Byte: {}, Errors: {}", byte, errors);
+                    println!("End Sync Received Byte: {}, Errors: {}", byte, errors);
                     match byte {
                         ACK => break,
                         _ => {
@@ -186,7 +189,7 @@ impl XModem
                         }
                     }
                 }
-                _ => return Err("End of Transmission Sync Failed"),
+                _ => return Err("End of Transmission Sync I/O failure"),
             }
         }
         Ok(())
