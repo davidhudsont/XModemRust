@@ -7,7 +7,6 @@ pub struct XModem
 {
     uart: Box<dyn SerialPort>,
     retries: i32,
-    timeout: i32,
     padbyte: u8
 }
 
@@ -16,7 +15,6 @@ const STX: u8 = 0x02;
 const EOT: u8 = 0x04;
 const ACK: u8 = 0x06;
 const NAK: u8 = 0x15;
-const ETB: u8 = 0x17;
 const CAN: u8 = 0x18;
 const SUB: u8 = 0x1A;
 const CRC: u8 = 0x43;
@@ -29,8 +27,7 @@ impl XModem
         Self {
             uart: device,
             retries: 16,
-            timeout: 1000,
-            padbyte: 27
+            padbyte: SUB,
         }
     }
 
@@ -44,7 +41,7 @@ impl XModem
         self.uart.as_mut().write(&packet[..]).expect("Failed Send Transmission Byte");
     }
 
-    pub fn recieve(&mut self, mut stream: Box<dyn Write>, crc_mode: bool) -> Result<usize, &'static str> {
+    pub fn receive(&mut self, mut stream: Box<dyn Write>, crc_mode: bool) -> Result<usize, &'static str> {
         let mut errors = 0;
         let mut size = 0;
         let mut cancel = false;
@@ -216,7 +213,7 @@ impl XModem
         let mut packet_num: u8 = 1;
         self.uart.clear(serialport::ClearBuffer::Input).expect("Failed to clear buffer");
         loop {
-            let mut data: Vec<u8> = vec![0; packet_length];
+            let mut data: Vec<u8> = vec![self.padbyte; packet_length];
             match stream.as_mut().read(&mut data) {
                 Ok(0) => break,
                 Ok(len) => {
