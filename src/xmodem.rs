@@ -62,18 +62,18 @@ impl XModem
         }
         // Receive Packets
         let mut data_length: usize = 128;
-        let packet_length = if crc_mode { data_length + 5 } else { data_length + 4};
+        let packet_length = if crc_mode { data_length + 4 } else { data_length + 3};
         let mut packet_num: u8 = 1;
         errors = 0;
         loop {
-            let mut packet = vec![0; packet_length];
-            match self.uart.as_mut().read(&mut packet) {
-                Ok(_) => {
-                    println!("Data received {:?}", packet);
 
-                    let header = packet[0];
-                    println!("Header: {header}");
-                    match header {
+            let mut header = vec![0; 1];
+            // Read Header
+            match self.uart.as_mut().read(&mut header) {
+                Ok(_) => {
+                    println!("Data received {:?}", header);
+
+                    match header[0] {
                         SOH => data_length = 128,
                         STX => data_length = 1024,
                         EOT => break,
@@ -91,9 +91,23 @@ impl XModem
                             }
                         }
                     }
+                }
+                _ => {
+                    errors += 1;
+                    if errors > self.retries {
+                        return Err("Packet Send Failed, reached max number of retries");
+                    }
+                }
+            }
 
-                    let pn1 = packet[1];
-                    let pn2 = packet[2];
+            // Read rest of packet.
+            let mut packet = vec![0; packet_length];
+            match self.uart.as_mut().read(&mut packet) {
+                Ok(_) => {
+                    println!("Data received {:?}", packet);
+
+                    let pn1 = packet[0];
+                    let pn2 = packet[1];
                     if (pn1 + pn2) != 0xff {
                         println!("Error Packet Number was not expected");
                         errors += 1;
@@ -111,18 +125,19 @@ impl XModem
                     }
 
                     if crc_mode {
-                        let calc_crc = crc(&packet[3..131]);
-                        let received_crc = ((packet[131] as u16) << 8) | packet[132] as u16;
+                        let calc_crc = crc(&packet[2..130]);
+                        let received_crc = ((packet[130] as u16) << 8) | packet[131] as u16;
                         if received_crc != calc_crc
                         {
+                            println!("CRC error: theirs {received_crc}, ours {calc_crc}");
                             errors += 1;
                             self.send_nak();
                             continue;
                         }
                     }
                     else {
-                        let calc_checksum = checksum(&packet[3..131]);
-                        let received_checksum = packet[131];
+                        let calc_checksum = checksum(&packet[2..130]);
+                        let received_checksum = packet[130];
                         if calc_checksum != received_checksum {
                             println!("Check sum error: theirs {received_checksum}, ours {calc_checksum}");
                             errors += 1;
@@ -132,7 +147,7 @@ impl XModem
                     }
 
                     size += data_length;
-                    stream.as_mut().write(&packet[3..131]).expect("Failed to write to stream");
+                    stream.as_mut().write(&packet[2..130]).expect("Failed to write to stream");
                     println!("Send ACK");
                     self.send_ack();
                     packet_num += 1;
