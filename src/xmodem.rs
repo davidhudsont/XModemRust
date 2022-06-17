@@ -34,8 +34,121 @@ impl XModem
         }
     }
 
-    pub fn recieve(stream: Box<dyn Write>, crc_mode: bool) -> u32 {
-        todo!()
+    fn send_nak(&mut self) {
+        let packet: Vec<u8> = vec![NAK];
+        self.uart.as_mut().write(&packet[..]).expect("Failed Send Transmission Byte");
+    }
+
+    fn send_ack(&mut self) {
+        let packet: Vec<u8> = vec![ACK];
+        self.uart.as_mut().write(&packet[..]).expect("Failed Send Transmission Byte");
+    }
+
+    pub fn recieve(&mut self, mut stream: Box<dyn Write>, crc_mode: bool) -> Result<usize, &'static str> {
+        let mut errors = 0;
+        let mut size = 0;
+        let mut cancel = false;
+        // Synchronization
+        loop {
+            if crc_mode {
+                let buf = vec![CRC];
+                self.uart.as_mut().write(&buf[..]).expect("Sync I/O failure");
+            }
+            else {
+                let buf = vec![NAK];
+                self.uart.as_mut().write(&buf[..]).expect("Sync I/O failure");
+            }
+            break;
+        }
+        // Receive Packets
+        let mut data_length: usize = 128;
+        let packet_length = if crc_mode { data_length + 5 } else { data_length + 4};
+        let mut packet_num: u8 = 1;
+        errors = 0;
+        loop {
+            let mut packet = vec![0; packet_length];
+            match self.uart.as_mut().read(&mut packet) {
+                Ok(_) => {
+                    println!("Data received {:?}", packet);
+
+                    let header = packet[0];
+                    println!("Header: {header}");
+                    match header {
+                        SOH => data_length = 128,
+                        STX => data_length = 1024,
+                        EOT => break,
+                        CAN => 
+                        {
+                            if cancel {
+                                return Err("Cancelled got CAN Twice")
+                            }
+                            cancel = true;
+                        }
+                        _ => {
+                            errors += 1;
+                            if errors > self.retries {
+                                return Err("Synchronization failed, reached max number of retries");
+                            }
+                        }
+                    }
+
+                    let pn1 = packet[1];
+                    let pn2 = packet[2];
+                    if (pn1 + pn2) != 0xff {
+                        println!("Error Packet Number was not expected");
+                        errors += 1;
+                        self.send_nak();
+                        continue;
+                    }
+                    else if pn1 != packet_num {
+                        println!("Error Packet Number was not expected");
+                        errors += 1;
+                        self.send_nak();
+                        continue;
+                    }
+                    if errors > self.retries {
+                        return Err("Packet Send Failed, reached max number of retries");
+                    }
+
+                    if crc_mode {
+                        let calc_crc = crc(&packet[3..131]);
+                        let received_crc = ((packet[131] as u16) << 8) | packet[132] as u16;
+                        if received_crc != calc_crc
+                        {
+                            errors += 1;
+                            self.send_nak();
+                            continue;
+                        }
+                    }
+                    else {
+                        let calc_checksum = checksum(&packet[3..131]);
+                        let received_checksum = packet[131];
+                        if calc_checksum != received_checksum {
+                            println!("Check sum error: theirs {received_checksum}, ours {calc_checksum}");
+                            errors += 1;
+                            self.send_nak();
+                            continue;
+                        }
+                    }
+
+                    size += data_length;
+                    stream.as_mut().write(&packet[3..131]).expect("Failed to write to stream");
+                    println!("Send ACK");
+                    self.send_ack();
+                    packet_num += 1;
+
+                }
+                _ => {
+                    errors += 1;
+                    if errors > self.retries {
+                        return Err("Packet Send Failed, reached max number of retries");
+                    }
+                }
+            }
+        }
+        self.send_ack();
+        println!("Data received, size: {size}");
+        Ok(size)
     }
 
     pub fn send(&mut self, mut stream: Box<dyn Read>) -> Result<(), &'static str> {
