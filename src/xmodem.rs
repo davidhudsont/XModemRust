@@ -1,6 +1,6 @@
 
 use serialport::SerialPort;
-use std::{io::{Read, Write}};
+use std::io::{Read, Write};
 
 
 pub struct XModem
@@ -31,6 +31,16 @@ impl XModem
         }
     }
 
+    pub fn retries(mut self, retries: i32) -> Self {
+        self.retries = retries;
+        self
+    }
+
+    pub fn padbyte(mut self, padbyte: u8) -> Self {
+        self.padbyte = padbyte;
+        self
+    }
+
     fn send_nak(&mut self) {
         let packet: Vec<u8> = vec![NAK];
         self.uart.as_mut().write(&packet[..]).expect("Failed Send Transmission Byte");
@@ -46,21 +56,11 @@ impl XModem
         let mut size = 0;
         let mut cancel = false;
         // Synchronization
-        loop {
-            if crc_mode {
-                let buf = vec![CRC];
-                self.uart.as_mut().write(&buf[..]).expect("Sync I/O failure");
-            }
-            else {
-                let buf = vec![NAK];
-                self.uart.as_mut().write(&buf[..]).expect("Sync I/O failure");
-            }
-            break;
-        }
+        let buf = if crc_mode {vec![CRC]}  else { vec![NAK]};
+        self.uart.as_mut().write(&buf[..]).expect("Sync I/O failure");
         // Receive Packets
         let mut data_length: usize = 128;
         let mut packet_num: u8 = 1;
-        errors = 0;
         loop {
 
             let mut header = vec![0; 1];
@@ -79,12 +79,15 @@ impl XModem
                                 return Err("Cancelled got CAN Twice")
                             }
                             cancel = true;
+                            continue;
                         }
                         _ => {
+                            self.uart.as_mut().write(&buf[..]).expect("Sync I/O failure");
                             errors += 1;
                             if errors > self.retries {
                                 return Err("Synchronization failed, reached max number of retries");
                             }
+                            continue;
                         }
                     }
                 }
