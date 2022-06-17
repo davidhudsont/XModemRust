@@ -18,11 +18,11 @@ fn main() {
 
     let mut xmodem: XModem = XModem::new(port);
 
-    // let stream = File::open("example.txt").unwrap();
-    // xmodem.send(Box::new(stream)).unwrap();
+    let stream = File::open("example.txt").unwrap();
+    xmodem.send(Box::new(stream)).unwrap();
 
-    let stream = File::create("example2.txt").unwrap();
-    xmodem.recieve(Box::new(stream), false).unwrap();
+    // let stream = File::create("example2.txt").unwrap();
+    // xmodem.receive(Box::new(stream), true).unwrap();
 
 }
 

@@ -5,8 +5,11 @@ use std::io::{Read, Write};
 
 pub struct XModem
 {
+    /// Serial device
     uart: Box<dyn SerialPort>,
+    /// Maximum retries
     retries: i32,
+    /// Padding bytes
     padbyte: u8
 }
 
@@ -31,11 +34,13 @@ impl XModem
         }
     }
 
+    /// Set the maximum number of retries
     pub fn retries(mut self, retries: i32) -> Self {
         self.retries = retries;
         self
     }
 
+    /// Set the padding bytes
     pub fn padbyte(mut self, padbyte: u8) -> Self {
         self.padbyte = padbyte;
         self
@@ -51,6 +56,7 @@ impl XModem
         self.uart.as_mut().write(&packet[..]).expect("Failed Send Transmission Byte");
     }
 
+    /// Receives to a stream on the XModem protocol
     pub fn receive(&mut self, mut stream: Box<dyn Write>, crc_mode: bool) -> Result<usize, &'static str> {
         let mut errors = 0;
         let mut size = 0;
@@ -166,6 +172,7 @@ impl XModem
         Ok(size)
     }
 
+    /// Sends a stream over the XModem protocol
     pub fn send(&mut self, mut stream: Box<dyn Read>) -> Result<(), &'static str> {
         let mut errors = 0;
 
@@ -329,13 +336,15 @@ impl XModem
 
 }
 
-pub fn checksum(data: &[u8]) -> u8 {
+/// Calculates 8bit XModem checksum
+fn checksum(data: &[u8]) -> u8 {
     let sum: u32 = data.iter().map(|&val| val as u32).sum();
     let checksum = (sum % 256) as u8;
     return checksum; 
 }
 
-pub fn crc(data: &[u8]) -> u16 {
+/// Calculate 16bit XModem CRC
+fn crc(data: &[u8]) -> u16 {
     let mut crc = 0;
     for val in data {
         let item: i32 = val.clone().into();
