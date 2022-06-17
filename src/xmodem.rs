@@ -62,7 +62,6 @@ impl XModem
         }
         // Receive Packets
         let mut data_length: usize = 128;
-        let packet_length = if crc_mode { data_length + 4 } else { data_length + 3};
         let mut packet_num: u8 = 1;
         errors = 0;
         loop {
@@ -101,6 +100,7 @@ impl XModem
             }
 
             // Read rest of packet.
+            let packet_length = if crc_mode { data_length + 4 } else { data_length + 3};
             let mut packet = vec![0; packet_length];
             match self.uart.as_mut().read(&mut packet) {
                 Ok(_) => {
@@ -125,8 +125,8 @@ impl XModem
                     }
 
                     if crc_mode {
-                        let calc_crc = crc(&packet[2..130]);
-                        let received_crc = ((packet[130] as u16) << 8) | packet[131] as u16;
+                        let calc_crc = crc(&packet[2..packet_length - 2]);
+                        let received_crc = ((packet[packet_length - 2] as u16) << 8) | packet[packet_length - 1] as u16;
                         if received_crc != calc_crc
                         {
                             println!("CRC error: theirs {received_crc}, ours {calc_crc}");
@@ -136,8 +136,8 @@ impl XModem
                         }
                     }
                     else {
-                        let calc_checksum = checksum(&packet[2..130]);
-                        let received_checksum = packet[130];
+                        let calc_checksum = checksum(&packet[2..packet_length - 1]);
+                        let received_checksum = packet[packet_length - 1];
                         if calc_checksum != received_checksum {
                             println!("Check sum error: theirs {received_checksum}, ours {calc_checksum}");
                             errors += 1;
@@ -147,7 +147,7 @@ impl XModem
                     }
 
                     size += data_length;
-                    stream.as_mut().write(&packet[2..130]).expect("Failed to write to stream");
+                    stream.as_mut().write(&packet[2..packet_length - 1]).expect("Failed to write to stream");
                     println!("Send ACK");
                     self.send_ack();
                     packet_num += 1;
